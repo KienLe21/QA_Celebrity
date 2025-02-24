@@ -1,0 +1,6 @@
+streamlit
+numpy
+torch
+datasets
+transformers
+rank-bm25
