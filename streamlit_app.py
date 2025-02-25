@@ -7,15 +7,15 @@ import pickle
 from transformers import DPRQuestionEncoder, AutoTokenizer, pipeline
 from rank_bm25 import BM25Okapi
 
-# # ✅ Fix lỗi Streamlit Async
-# asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-
 # 🔹 Load models
 device = "cuda"
 torch.set_num_threads(1) 
-question_encoder = DPRQuestionEncoder.from_pretrained("facebook/dpr-question_encoder-single-nq-base").to(device)
+# question_encoder = DPRQuestionEncoder.from_pretrained("facebook/dpr-question_encoder-single-nq-base").to(device)
+# tokenizer = AutoTokenizer.from_pretrained("facebook/dpr-question_encoder-single-nq-base")
+question_encoder = DPRQuestionEncoder.from_pretrained("KienLe21/dpr_squadv2_finetune_question").to(device)
 tokenizer = AutoTokenizer.from_pretrained("facebook/dpr-question_encoder-single-nq-base")
-qa_pipeline = pipeline("question-answering", model="KienLe21/demo_qa_model", device=0)
+# qa_pipeline = pipeline("question-answering", model="KienLe21/demo_qa_model", device=0)
+qa_pipeline = pipeline("question-answering", model="KienLe21/finetune_distilbert", device=0)
 
 # 🔹 Load FAISS index
 faiss_index = faiss.read_index("faiss_index.bin")
@@ -24,7 +24,7 @@ faiss_index = faiss.read_index("faiss_index.bin")
 with open("bm25_index.pkl", "rb") as f:
     bm25 = pickle.load(f)
 
-# 🔹 Load contexts và embeddings từ SQLite (✅ Fix lỗi "ambiguous column name")
+# 🔹 Load contexts và embeddings từ SQLite 
 db_conn = sqlite3.connect("embeddings.db")
 cursor = db_conn.cursor()
 cursor.execute("""
@@ -40,13 +40,14 @@ docs = [row[1] for row in data]
 all_embeddings = [np.frombuffer(row[2], dtype=np.float32) for row in data]
 
 def query_celebrity(question):
-    # 🔹 BM25 lấy top-25 context gần nhất
-    top_n_bm25 = 25
+    # 🔹 BM25 lấy top context gần nhất
+    top_n_bm25 = 100
     tokenized_question = question.split()
     bm25_scores = bm25.get_scores(tokenized_question)
-    top_k = np.argsort(bm25_scores)[::-1][:top_n_bm25]  # Lấy 25 context tốt nhất
+    top_k = np.argsort(bm25_scores)[::-1][:top_n_bm25]
     selected_docs = [docs[i] for i in top_k]
     selected_embeddings = [all_embeddings[i] for i in top_k]
+    bm25_selected_scores = [bm25_scores[i] for i in top_k]
 
     if not selected_embeddings:
         return {"answer": "Không tìm thấy câu trả lời", "score": 0, "context": ""}
@@ -63,20 +64,43 @@ def query_celebrity(question):
     with torch.no_grad():
         question_emb = question_encoder(**inputs).pooler_output.cpu().numpy()
 
-    # 🔹 FAISS search trên 25 context tốt nhất
-    temp_faiss_index = faiss.IndexFlatL2(len(selected_embeddings[0]))
-    temp_faiss_index.add(np.array(selected_embeddings))
-    _, faiss_results = temp_faiss_index.search(question_emb, k=1)
+    # 🔹 FAISS search trên các context đã chọn từ BM25
+    selected_embeddings = np.array(selected_embeddings)  # Chuyển thành NumPy array
+    temp_faiss_index = faiss.IndexFlatL2(selected_embeddings.shape[1])
+    temp_faiss_index.add(selected_embeddings)
+    distances, faiss_results = temp_faiss_index.search(question_emb, k=top_n_bm25)
 
-    if len(faiss_results[0]) == 0:
+    # 🔹 Tính điểm ranking kết hợp BM25 + FAISS
+    combined_scores = []
+    for i, doc_idx in enumerate(top_k):
+        faiss_score = 1 / (1 + distances[0][i])  # Chuyển khoảng cách L2 thành điểm
+        bm25_score = bm25_selected_scores[i]  # Lấy điểm BM25 gốc
+        final_score = bm25_score + faiss_score  # Kết hợp điểm BM25 + FAISS
+        combined_scores.append((final_score, selected_docs[i]))
+
+    # 🔹 Chọn top-K context tốt nhất
+    top_k_final = 5
+    sorted_docs = sorted(combined_scores, key=lambda x: x[0], reverse=True)[:top_k_final]
+
+    # 🔹 Dùng QA model trên các context đã chọn
+    best_answer = {"answer": "Không tìm thấy câu trả lời", "score": 0, "context": ""}
+    score_threshold = 0.6  # Ngưỡng confidence score
+
+    for score, context in sorted_docs:
+        answer = qa_pipeline(question=question, context=context)
+        if answer["score"] > best_answer["score"]:  # Chọn câu trả lời có độ tin cậy cao nhất
+            best_answer = {
+                "answer": answer["answer"],
+                "score": answer["score"],
+                "context": context
+            }
+
+    # 🔹 Nếu score quá thấp, trả về "Không tìm thấy câu trả lời"
+    if best_answer["score"] < score_threshold:
         return {"answer": "Không tìm thấy câu trả lời", "score": 0, "context": ""}
 
-    best_context = selected_docs[faiss_results[0][0]]
+    return best_answer
 
-    # 🔹 Dùng QA model để tìm câu trả lời
-    answer = qa_pipeline(question=question, context=best_context)
-
-    return {"answer": answer["answer"], "score": answer["score"], "context": best_context}
 
 
 # 🔹 Streamlit UI

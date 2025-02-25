@@ -7,7 +7,9 @@ from transformers import DPRContextEncoder, AutoTokenizer
 from rank_bm25 import BM25Okapi
 
 device = "cuda"
-context_encoder = DPRContextEncoder.from_pretrained("facebook/dpr-ctx_encoder-single-nq-base").to(device)
+# context_encoder = DPRContextEncoder.from_pretrained("facebook/dpr-ctx_encoder-single-nq-base").to(device)
+# tokenizer = AutoTokenizer.from_pretrained("facebook/dpr-question_encoder-single-nq-base")
+context_encoder = DPRContextEncoder.from_pretrained("KienLe21/dpr_squadv2_finetune_ctx").to(device)
 tokenizer = AutoTokenizer.from_pretrained("facebook/dpr-question_encoder-single-nq-base")
 
 # Load dataset
