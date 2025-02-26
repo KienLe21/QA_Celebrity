@@ -13,7 +13,14 @@ context_encoder = DPRContextEncoder.from_pretrained("KienLe21/dpr_squadv2_finetu
 tokenizer = AutoTokenizer.from_pretrained("facebook/dpr-question_encoder-single-nq-base")
 
 # Load dataset
-squad = load_dataset("squad_v2", split="train").select(range(10000))
+dataset = load_dataset("squad_v2", split="train", streaming=True)
+
+# Chọn các index mong muốn
+selected_indices = set(list(range(0, 1300)) + list(range(4800, 5200)))
+
+# Chỉ lấy đúng những dòng cần thiết 
+squad = (row for i, row in enumerate(dataset) if i in selected_indices)
+
 docs = [d["context"] for d in squad]
 
 # Kết nối SQLite

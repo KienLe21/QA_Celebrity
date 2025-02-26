@@ -84,7 +84,7 @@ def query_celebrity(question):
 
     # 🔹 Dùng QA model trên các context đã chọn
     best_answer = {"answer": "Không tìm thấy câu trả lời", "score": 0, "context": ""}
-    score_threshold = 0.6  # Ngưỡng confidence score
+    score_threshold = 0.2  # Ngưỡng confidence score
 
     for score, context in sorted_docs:
         answer = qa_pipeline(question=question, context=context)
