@@ -83,7 +83,7 @@ def query_celebrity(question):
     sorted_docs = sorted(combined_scores, key=lambda x: x[0], reverse=True)[:top_k_final]
 
     # 🔹 Dùng QA model trên các context đã chọn
-    best_answer = {"answer": "Không tìm thấy câu trả lời", "score": 0, "context": ""}
+    best_answer = {"answer": "Cannot find answer", "score": 0, "context": ""}
     score_threshold = 0.2  # Ngưỡng confidence score
 
     for score, context in sorted_docs:
@@ -97,7 +97,7 @@ def query_celebrity(question):
 
     # 🔹 Nếu score quá thấp, trả về "Không tìm thấy câu trả lời"
     if best_answer["score"] < score_threshold:
-        return {"answer": "Không tìm thấy câu trả lời", "score": 0, "context": ""}
+        return {"answer": "Cannot find answer", "score": 0, "context": ""}
 
     return best_answer
 
